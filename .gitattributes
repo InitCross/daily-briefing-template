@@ -1,0 +1,5 @@
+# Scripts + workflows run on Linux (GitHub Actions) — force LF so bash doesn't
+# choke on CRLF ("\r: command not found") when copied from a Windows machine.
+*.sh   text eol=lf
+*.yml  text eol=lf
+*.yaml text eol=lf
