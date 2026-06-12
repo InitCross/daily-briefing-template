@@ -1,0 +1,59 @@
+name: Weekly Recap
+
+on:
+  schedule:
+    - cron: '0 15 * * 0'  # Sunday 22:00 Asia/Bangkok (= 15:00 UTC)
+  workflow_dispatch:
+
+concurrency:
+  group: recap
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Fetch weekly recap data
+        env:
+          ADO_PAT: ${{ secrets.ADO_PAT }}
+          OWNER_NAME: ${{ vars.OWNER_NAME }}
+        run: bash scripts/fetch-recap-data.sh > data.json
+
+      - name: Generate recap (Gemini API)
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          PROMPT_FILE: ./prompts/recap.md
+        run: bash scripts/generate-briefing.sh data.json > briefing.html
+
+      - name: Send to Telegram
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: bash scripts/send-telegram.sh briefing.html
+
+      - name: Upload artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v5
+        with:
+          name: recap-debug
+          path: |
+            data.json
+            briefing.html
+          retention-days: 7
+
+      - name: Notify Telegram on failure
+        if: failure()
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          MSG="⚠️ <b>Weekly Recap พัง</b>%0Arun: <a href='${RUN_URL}'>logs</a>"
+          curl -sS -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}" \
+            --data-urlencode "parse_mode=HTML" \
+            --data-urlencode "disable_web_page_preview=true" \
+            --data "text=${MSG}"
